@@ -1,0 +1,4 @@
+#!/bin/sh
+# Local CI: GitHub Actions is off for this fork (see CLAUDE.md).
+set -e
+npm test

@@ -26,6 +26,7 @@
     "wow-ai": "bridge/supervisor.js"
   },
   "scripts": {
+    "prepare": "git config core.hooksPath .githooks",
     "setup": "node setup.js",
     "start": "node bridge/supervisor.js",
     "slots": "node bridge/install-slots.js",
