@@ -10,10 +10,18 @@ load-on-demand slot addons. Read `docs/ARCHITECTURE.md` before touching either.
 - **Fork, don't rebuild.** Keep upstream's transport; our work goes on top.
   Pull upstream with `git fetch upstream && git merge upstream/main`; keep our
   changes in new files or small hunks so those merges stay cheap.
-- **Runs on the MacBook.** WoW: Forever is installed at
-  `/Applications/World of Warcraft/_forever_`; the bridge captures with
-  `bridge/capture_mac.py`. The terminal running it needs macOS Screen
-  Recording and Automation (System Events) permission.
+- **Plays on the Windows PC; the MacBook is for travel.** Both are installed
+  (2026-11-04), each with its own gitignored `bridge/config.json`:
+  - PC: client `F:\World of Warcraft\_forever_` (the WD_BLACK SN7100, his
+    fastest drive; keep it there), checkout
+    `C:\Users\User\Documents\Claude\Github\wow-claude`, capture `capture.ps1`.
+  - Mac: client `/Applications/World of Warcraft/_forever_`, checkout
+    `~/Documents/Projects/Github/Personal/wow-claude`, capture
+    `capture_mac.py`; its terminal needs Screen Recording and Automation
+    (System Events) permission.
+  - Each config's `agents.claude.deniedTools` holds `mcp__google-admin` and
+    his deploy/migrate scripts (the ones his global settings pre-allow). A
+    re-created config loses that list: put it back.
 - **Ban risk accepted, on his main Battle.net account.** Blizzard's terms
   forbid third-party software that collects data from the game; the pixel
   capture may count. No known bans; he chose it knowingly. Do not re-litigate.
