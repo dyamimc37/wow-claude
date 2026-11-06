@@ -330,7 +330,15 @@ def run():
         start = time.time()
         # Refresh window bounds every 5 s so moving/resizing the window is picked up.
         if bounds is None or start - bounds_at > 5:
-            bounds = find_window_bounds()
+            try:
+                bounds = find_window_bounds()
+            except (RuntimeError, subprocess.SubprocessError, ValueError) as e:
+                # System Events loses the window when it closes, or leaves the
+                # current Space; that is a wait, not a reason to die.
+                bounds = None
+                if start - last_warn >= 5:
+                    last_warn = start
+                    emit({"warn": "window lookup failed: %s" % e})
             bounds_at = start
         if not bounds:
             emit({"info": "waiting for %s window" % (args.window_name or args.process_name)})
