@@ -73,10 +73,8 @@ function newVM() {
   const num = (expr) => Number(evaluate(expr));
   run(fs.readFileSync(path.join(__dirname, 'wow_stub.lua'), 'utf8'));
   run(COACH_STUB);
-  for (const f of ['Codec.lua', 'Inbox.lua', 'WoWAI.lua', 'Map.lua', 'Coach.lua']) {
-    if (f === 'Map.lua') continue; // needs the world map stub; the coach doesn't touch it
-    run(fs.readFileSync(path.join(ADDON, f), 'utf8'), 'WoWAI');
-  }
+  // Not Map.lua: it needs the world map stub, and the coach doesn't touch it.
+  for (const f of ['Codec.lua', 'Inbox.lua', 'WoWAI.lua', 'Coach.lua']) run(fs.readFileSync(path.join(ADDON, f), 'utf8'), 'WoWAI');
   return { run, evaluate, num };
 }
 
@@ -267,8 +265,9 @@ test("other players' loot, whispers and names never reach a coach message", () =
 
   // Death with a player, a player's pet, or a secret-valued target: no name.
   for (const target of ['{ name = "Bob", level = 23, player = true }', '{ name = "Bobs Pet", level = 20, player = false, controlled = true }']) {
+    advance(vm, 200); // past the cooldown from the last round
     vm.run(`STUB.target = ${target}; STUB.FireEvent("PLAYER_DEAD")`);
-    advance(vm, 200);
+    advance(vm, 10);
     const rec = coachRecord(vm);
     assert.ok(rec && rec.text.includes('Died in Duskwood'), 'still reports the death');
     assert.ok(!/Bob/.test(stripText(vm)), 'no player name on the strip: ' + rec.text);
@@ -447,7 +446,6 @@ test('/ai model and /ai effort are per chat, travel as flags, survive a new mess
   assert.equal(vm.evaluate('WoWAIDB.outbox.model'), 'opus', 'the reload path carries it too');
   assert.equal(vm.evaluate('WoWAIDB.outbox.effort'), 'high');
   assert.equal(rec.newSession, false, 'the conversation carries on');
-  assert.match(vm.evaluate('STUB.texts and WoWAIFrame and "ok" or "ok"'), /ok/);
 
   vm.run('WoWAI.NewChat("Second"); WoWAI.Send("second")');
   rec = records(vm).find(r => r.text === 'second');
@@ -463,24 +461,30 @@ test('bad model names are refused, and sentences go to the agent', () => {
   const vm = newVM();
   start(vm);
   vm.run('SlashCmdList.WOWAI("model --dangerously-skip-permissions")');
-  assert.equal(vm.evaluate('WoWAIDB.chats[1].model'), '');
+  assert.equal(vm.evaluate('WoWAIDB.chats[1].model'), null);
   vm.run('SlashCmdList.WOWAI("model how does this work")');
   assert.ok(records(vm).find(r => r.text === 'model how does this work'));
   vm.run('SlashCmdList.WOWAI("cancel"); SlashCmdList.WOWAI("effort is the key to raiding")');
   assert.ok(records(vm).find(r => r.text === 'effort is the key to raiding'));
-  assert.equal(vm.evaluate('WoWAIDB.chats[1].effort'), '');
+  assert.equal(vm.evaluate('WoWAIDB.chats[1].effort'), null);
 });
 
 test('the status line shows a chosen model and effort, and nothing when unset', () => {
   const vm = newVM();
   start(vm);
   vm.run('WoWAI.Toggle(true); WoWAI.Render()');
-  vm.run(`FIND = function() for _, f in ipairs(STUB.frames) do for _, c in ipairs(f.children or {}) do end end end`);
   vm.run('SlashCmdList.WOWAI("model sonnet"); SlashCmdList.WOWAI("effort max")');
   const history = vm.evaluate('WoWAIDB.chats[1].history[#WoWAIDB.chats[1].history].text');
   assert.match(history, /effort set to max/);
   vm.run('SlashCmdList.WOWAI("model")');
   assert.match(vm.evaluate('WoWAIDB.chats[1].history[#WoWAIDB.chats[1].history].text'), /model: sonnet/);
+  const status = () => vm.evaluate('STUB.statusLine');
+  vm.run(`STUB.statusLine = nil; WoWAI.Render()
+    for i = #STUB.texts, 1, -1 do if STUB.texts[i]:find("^cwd: ") then STUB.statusLine = STUB.texts[i]; break end end`);
+  assert.match(status(), /agent: .*model: sonnet   effort: max   mode: pixel/);
+  vm.run(`SlashCmdList.WOWAI("model default"); SlashCmdList.WOWAI("effort default"); STUB.statusLine = nil; WoWAI.Render()
+    for i = #STUB.texts, 1, -1 do if STUB.texts[i]:find("^cwd: ") then STUB.statusLine = STUB.texts[i]; break end end`);
+  assert.doesNotMatch(status(), /model:|effort:/);
 });
 
 // --- The bridge's half ---

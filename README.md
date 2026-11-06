@@ -140,6 +140,9 @@ Right-clicking a chat in the left panel opens a small menu with **Rename...**, *
 | `/wow-ai new [name]` | new chat = new agent session. Unnamed chats take their title from your first message |
 | `/wow-ai chat <n\|name>` | switch chats (or click the left panel; right-click a row for Rename, Folder and Agent, its trash can deletes it) |
 | `/wow-ai agent [claude\|codex\|grok\|agy\|hermes]` | which agent this chat talks to; no name shows the current one and the bridge's default, `default` goes back to the bridge's. A chat that changes agent starts a fresh session with it |
+| `/wow-ai model [name]` | which model this chat uses, such as `opus`, `sonnet` or `fable`; no name shows it, `default` goes back to the config's. The conversation carries on |
+| `/wow-ai effort [level]` | how hard Claude thinks in this chat: `low`, `medium`, `high`, `xhigh` or `max`; no level shows it, `default` goes back. Only Claude uses this |
+| `/wow-ai coach [on\|off\|test]` | Claude speaks up on quests, deaths, level-ups and gear upgrades, see [The coach](#the-coach); no argument shows its status, `cooldown <seconds>` sets how often |
 | `/wow-ai cd <folder>` | folder this chat's agent works in (**Folder...** after right-clicking the chat opens the same thing as a dialog). Relative to the bridge's folder (`/wow-ai cd realms`, `/wow-ai cd ../other`), `~` works, a full path too; `/wow-ai cd` alone goes back to the bridge's default. A chat that changes folder starts a fresh session there |
 | `/wow-ai reset` | wipe this chat's agent memory, keep the transcript |
 | `/wow-ai context [on\|off]` | show what the agent is told about your character and location, or turn it on/off |
@@ -204,6 +207,17 @@ The system prompt tells every agent how to hand marks to the bridge: append comm
 
 The agents run headless, so they can't ask you to approve a tool. Each agent's block in `bridge/config.json` has a `permissionMode`, `acceptEdits` by default: file edits inside the project are auto-approved, `allowedTools` lists the commands it may run (`Bash(git:*)` is any command starting with `git`; the same rule syntax for every agent, translated for Grok), and `deniedTools` the ones it never may. What happens to anything else differs. Claude denies it. Codex has no allowlist: it runs commands in a sandbox that can write the project folder but not reach the network (unless `networkAccess` is on), and explains a blocked command in its reply. Grok's headless mode runs ordinary commands on its own and blocks the dangerous ones (deleting a project file, pushing) unless a rule allows them. With Claude and Grok the reply then grows an **Allow WebSearch, Bash(cargo:*) & retry** button: click it, the rules are added to that agent's list in your config permanently, and the agent resumes where it stopped. The rule is a prefix (`Bash(rm:*)` allows any `rm`), so read the button before clicking. `bypassPermissions` gives any agent full autonomy; you decide. The mapping per agent, as measured against the real CLIs, is in [docs/AGENTS.md](docs/AGENTS.md).
 
+## The coach
+
+Claude speaks up without being asked after a quest becomes ready or is turned in, a death, a level-up, or a gear upgrade you looted (higher item level than what you wear in that slot, or an empty slot). Tips appear in your game chat and in a chat called **Coach**. Talk back to it there like any chat.
+
+- **When it holds back:** events are batched, it waits 8 seconds for things to settle and at least 3 minutes between messages (`/wow-ai coach cooldown <seconds>`), and it sends nothing in combat, without the bridge, on the reload transport, or with fewer than 20 reply slots left. Claude often answers `SKIP`, which shows nothing.
+- **What it costs:** each message is a short Claude run, on Sonnet at low effort by default, and one reply slot. To change those, switch to the Coach chat and use `/wow-ai model` and `/wow-ai effort`, or set `coach` in `bridge/config.json`.
+- **What it can reach:** web search and nothing else. It runs without your MCP servers, settings, hooks or CLAUDE.md files.
+- **What it sends:** only the addon's own words and game data. Other players' names and chat never go in: only your own loot lines count, and only the item link is taken from them. Boss fights, Mythic+ and PvP hide some of this from addons, so details may be missing there.
+
+`/wow-ai coach off` stops it.
+
 ## Configuration (`bridge/config.json`)
 
 The keys you are most likely to touch. Every key, flag and environment variable is in [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
@@ -211,6 +225,7 @@ The keys you are most likely to touch. Every key, flag and environment variable 
 | Key | Meaning |
 |---|---|
 | `defaultCwd` | folder for chats that haven't been given one with `/wow-ai cd` |
+| `coach` | the coach's default `model` and `effort` (`sonnet`, `low`) |
 | `agent` | the agent for chats that haven't picked one with `/wow-ai agent` (`claude`, `codex`, `grok`, `agy` or `hermes`) |
 | `agents.<id>.permissionMode`, `.allowedTools`, `.deniedTools`, `.model` | that agent's permissions, allowlist, denylist and model; `.path` where its executable is if the bridge can't find it, `.extraArgs` anything else to pass it |
 | `agents.codex.networkAccess` | let Codex's sandbox reach the network (default `false`) |

@@ -32,9 +32,9 @@ load-on-demand slot addons. Read `docs/ARCHITECTURE.md` before touching either.
   3. Stand in for guide addons (RestedXP-style) — upstream's map layers,
      routes and navigator are the base.
   4. Watch and coach: Claude speaks up unprompted on game events (quest done,
-     death, loot upgrade, level-up). New work. Forever uses Midnight's addon
-     rules, so combat state is hidden in boss fights, Mythic+ and PvP —
-     coaching cannot see inside those.
+     death, loot upgrade, level-up): `addon/WoWAI/Coach.lua`, `/ai coach`.
+     Forever uses Midnight's addon rules, so combat state is hidden in boss
+     fights, Mythic+ and PvP — coaching cannot see inside those.
   5. Write addons for him — upstream's primer (`docs/WOW-ADDON-PRIMER.md`)
      covers this; new addons load at his next `/reload`.
   6. **Do his work from in game** (EnerTribe: mail, Slack, Drive, GitHub …).
