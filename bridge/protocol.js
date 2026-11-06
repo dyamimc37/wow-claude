@@ -127,15 +127,15 @@ function cleanEffort(s) {
 }
 
 function parseFlags(flags) {
-  const out = { newSession: false, hello: false, forget: false, context: false, coach: false, allow: [], agent: '', model: '', effort: '' };
+  const out = { newSession: false, hello: false, forget: false, context: false, allow: [], agent: '' };
   for (const tok of String(flags || '').split(';')) {
     if (tok === 'n') out.newSession = true;
     else if (tok === 'h') out.hello = true;
     else if (tok === 'd') out.forget = true;
     else if (tok === 'c') out.context = true;
     else if (tok === 'coach') out.coach = true;
-    else if (tok.startsWith('model=')) out.model = cleanModel(tok.slice(6));
-    else if (tok.startsWith('effort=')) out.effort = cleanEffort(tok.slice(7));
+    else if (tok.startsWith('model=') && cleanModel(tok.slice(6))) out.model = cleanModel(tok.slice(6));
+    else if (tok.startsWith('effort=') && cleanEffort(tok.slice(7))) out.effort = cleanEffort(tok.slice(7));
     else if (tok.startsWith('allow=')) out.allow.push(...tok.slice(6).split(',').map(s => s.trim()).filter(Boolean));
     else if (tok.startsWith('agent=')) out.agent = tok.slice(6).trim().toLowerCase();
   }

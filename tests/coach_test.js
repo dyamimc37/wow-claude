@@ -453,8 +453,8 @@ test('/ai model and /ai effort are per chat, travel as flags, survive a new mess
 
   vm.run('SlashCmdList.WOWAI("model default"); SlashCmdList.WOWAI("effort default"); WoWAI.NewChat("Third"); WoWAI.Send("third")');
   rec = records(vm).find(r => r.text === 'third');
-  assert.equal(rec.model, '');
-  assert.equal(rec.effort, '');
+  assert.equal(rec.model, undefined);
+  assert.equal(rec.effort, undefined);
 });
 
 test('bad model names are refused, and sentences go to the agent', () => {
@@ -493,10 +493,10 @@ test('flags: model, effort and coach parse; anything that could become a CLI fla
   assert.deepEqual(
     (({ model, effort, coach }) => ({ model, effort, coach }))(P.parseFlags('model=claude-opus-5-5[1m];effort=XHIGH;coach')),
     { model: 'claude-opus-5-5[1m]', effort: 'xhigh', coach: true });
-  assert.equal(P.parseFlags('model=--dangerously-skip-permissions').model, '');
-  assert.equal(P.parseFlags('model=a b').model, '');
-  assert.equal(P.parseFlags('effort=extreme').effort, '');
-  assert.equal(P.parseFlags('').coach, false);
+  assert.equal(P.parseFlags('model=--dangerously-skip-permissions').model, undefined);
+  assert.equal(P.parseFlags('model=a b').model, undefined);
+  assert.equal(P.parseFlags('effort=extreme').effort, undefined);
+  assert.equal(P.parseFlags('').coach, undefined);
 });
 
 test('the reload path carries model, effort and the coach flag', () => {
