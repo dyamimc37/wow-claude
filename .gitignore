@@ -15,4 +15,5 @@ tests/tmp/
 *.zip
 bridge/probe.png
 bridge/mapjobs/
+bridge/coach/
 __pycache__/

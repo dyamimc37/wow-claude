@@ -352,7 +352,11 @@ const AGENTS = {
       if (rules.length) a.push('--allowedTools', ...rules);
       const denied = Array.isArray(cfg.deniedTools) ? cfg.deniedTools.filter(Boolean) : [];
       if (denied.length) a.push('--disallowedTools', ...denied);
+      if (cfg.tools) a.push('--tools', cfg.tools.join(','));
+      if (cfg.strictMcp) a.push('--strict-mcp-config');
+      if (cfg.settingSources !== undefined) a.push('--setting-sources', cfg.settingSources);
       if (cfg.model) a.push('--model', cfg.model);
+      if (cfg.effort) a.push('--effort', cfg.effort);
       if (resume) a.push('--resume', resume);
       if (system) a.push('--append-system-prompt', system);
       return a.concat(Array.isArray(cfg.extraArgs) ? cfg.extraArgs : []);
@@ -507,6 +511,26 @@ function agentConfig(cfg, id) {
   return { ...legacy, ...own };
 }
 
+// How the coach chat runs Claude: only web tools, none of the player's MCP
+// servers, settings, hooks or CLAUDE.md files, and a cheap model unless config
+// says otherwise. A coach run starts unprompted, so it gets no reach at all into
+// anything but the web. An empty --setting-sources string is what turns them off:
+// "project" still loaded both the user's and the repo's CLAUDE.md (measured on
+// claude 2.1.316).
+function coachConfig(claudeCfg, coachCfg) {
+  const own = coachCfg || {};
+  return {
+    path: claudeCfg.path,
+    model: own.model === undefined ? 'sonnet' : own.model,
+    effort: own.effort === undefined ? 'low' : own.effort,
+    permissionMode: 'dontAsk',
+    tools: ['WebSearch', 'WebFetch'],
+    allowedTools: ['WebSearch', 'WebFetch'],
+    strictMcp: true,
+    settingSources: '',
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Finding the executable
 // ---------------------------------------------------------------------------
@@ -598,7 +622,7 @@ function resolveCommand(id, cfg = {}) {
 }
 
 module.exports = {
-  AGENTS, DEFAULT_AGENT, agentIds, normalizeAgent, displayName, agentConfig,
+  AGENTS, DEFAULT_AGENT, agentIds, normalizeAgent, displayName, agentConfig, coachConfig,
   grokRules, snippet, contextBlock,
   claudeParser, codexParser, grokParser, agyParser, hermesParser, codexItemLine, grokCall, grokRefusal, shellInner,
   resolveCommand, unwrapShim, nativeNextTo,

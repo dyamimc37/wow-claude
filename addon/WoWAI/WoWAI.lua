@@ -176,6 +176,8 @@ local function AddChat(name, cwd)
 		name = name or ("Chat " .. (#db.chats + 1)),
 		cwd = cwd or (current and current.cwd) or DEFAULT_CWD,
 		agent = (current and current.agent) or "",
+		model = (current and current.model) or "",
+		effort = (current and current.effort) or "",
 		history = {},
 		unread = 0,
 		created = time(),
@@ -183,6 +185,7 @@ local function AddChat(name, cwd)
 	table.insert(db.chats, c)
 	return c
 end
+WoWAI.AddChat = AddChat -- Coach.lua makes its chat with this
 
 local function AnyPending()
 	for _, c in ipairs(db.chats) do
@@ -673,6 +676,14 @@ local function FreeSlot()
 	end
 end
 
+function WoWAI.SlotsLeft()
+	local n = 0
+	for i = 1, SLOT_COUNT do
+		if not C_AddOns.IsAddOnLoaded(SlotName(i)) then n = n + 1 end
+	end
+	return n
+end
+
 local function ScheduleNextPoll()
 	local idx = (run.polls or 0) + 1
 	local t = POLL_SCHEDULE[idx]
@@ -905,13 +916,15 @@ local function ProcessInbox()
 end
 
 Finish = function(chat, role, text, denied, agent, summary, macros)
-	AddHistory(chat, role, text, chat.pendingId, denied, agent, macros)
+	-- The coach answers SKIP when it has nothing useful to say: no bubble, no sound.
+	local quiet = chat.coach and role == "assistant" and type(text) == "string" and text:match("^%s*SKIP%s*%.?%s*$") ~= nil
+	if not quiet then AddHistory(chat, role, text, chat.pendingId, denied, agent, macros) end
 	chat.pendingId = nil
 	chat.progress = nil
 	if run.act then run.act[chat.id] = nil end
 	NotedBridge()
 	local visible = ui.frame and ui.frame:IsShown() and db.activeChat == chat.id
-	if not visible then
+	if not visible and not quiet then
 		chat.unread = (chat.unread or 0) + 1
 	end
 	if not AnyPending() then
@@ -922,7 +935,7 @@ Finish = function(chat, role, text, denied, agent, summary, macros)
 		chat.draft = nil
 	end
 	WoWAI.Render()
-	WoWAI.Notify(chat, text, agent, summary)
+	if not quiet then WoWAI.Notify(chat, text, agent, summary) end
 end
 
 ---------------------------------------------------------------------------
@@ -1189,8 +1202,9 @@ end
 ---------------------------------------------------------------------------
 
 -- allow: optional list of permission rules to grant before this message runs.
-function WoWAI.Send(text, allow)
-	local c = ActiveChat()
+-- chat: send from this chat in the background (the coach), leaving the window as it is.
+function WoWAI.Send(text, allow, chat)
+	local c = chat or ActiveChat()
 	if not c then return end
 	text = Trim(text or "")
 	if c.pendingId then
@@ -1231,6 +1245,9 @@ function WoWAI.Send(text, allow)
 	local tokens = {}
 	if c.resetNext then table.insert(tokens, "n") end
 	if c.agent and c.agent ~= "" then table.insert(tokens, "agent=" .. c.agent) end
+	if c.model and c.model ~= "" then table.insert(tokens, "model=" .. c.model) end
+	if c.effort and c.effort ~= "" then table.insert(tokens, "effort=" .. c.effort) end
+	if c.coach then table.insert(tokens, "coach") end
 	local allowHex
 	if type(allow) == "table" and #allow > 0 then
 		table.insert(tokens, "allow=" .. table.concat(allow, ","))
@@ -1247,6 +1264,9 @@ function WoWAI.Send(text, allow)
 		cwd = ToHex(c.cwd),
 		ctx = ctx and ToHex(ctx) or nil,
 		agent = (c.agent and c.agent ~= "") and c.agent or nil,
+		model = (c.model and c.model ~= "") and c.model or nil,
+		effort = (c.effort and c.effort ~= "") and c.effort or nil,
+		coach = c.coach and true or nil,
 		allow = allowHex,
 		newSession = newSession,
 		t = time(),
@@ -1264,7 +1284,7 @@ function WoWAI.Send(text, allow)
 		end
 		if first then c.name = AutoTitle(text) or c.name end
 	end
-	db.settings.shown = true
+	if not chat then db.settings.shown = true end
 
 	if db.settings.mode == "pixel" then
 		run.outbound[id] = { chat = c.id, cwd = c.cwd, flags = flags, name = c.name, text = text, ctx = ctx, sentAt = GetTime() }
@@ -1489,6 +1509,43 @@ function WoWAI.SetAgent(rest, c)
 		AddHistory(c, "system", "agent reset to the bridge's default: " .. (run.bridgeAgent and AgentName(run.bridgeAgent) or "unknown until connected"))
 	else
 		AddHistory(c, "system", "agent is the bridge's default: " .. (run.bridgeAgent and AgentName(run.bridgeAgent) or "unknown until connected") .. " (/wow-ai agent <name>, or right-click the chat and pick Agent, to change; agents: " .. AgentList() .. ")")
+	end
+	WoWAI.Render()
+end
+
+-- /wow-ai model and /wow-ai effort: this chat's own, sent with each message. The
+-- conversation carries on: unlike a new agent or folder, neither starts a new session.
+function WoWAI.SetModel(rest, c)
+	c = c or ActiveChat()
+	if not c then return end
+	rest = Trim(rest or "")
+	if rest == "" then
+		AddHistory(c, "system", "model: " .. ((c.model and c.model ~= "") and c.model or "the bridge's default") .. " (/wow-ai model <name>, such as opus, sonnet or fable; /wow-ai model default goes back)")
+	elseif rest == "-" or rest:lower() == "default" then
+		c.model = ""
+		AddHistory(c, "system", "model reset to the bridge's default")
+	elseif not rest:match("^%w[%w%._%-%[%]]*$") then
+		AddHistory(c, "system", "That doesn't look like a model name: " .. rest)
+	else
+		c.model = rest
+		AddHistory(c, "system", "model set to " .. rest .. " from the next message; the conversation carries on")
+	end
+	WoWAI.Render()
+end
+
+function WoWAI.SetEffort(rest, c)
+	c = c or ActiveChat()
+	if not c then return end
+	rest = Trim(rest or ""):lower()
+	local onlyClaude = (c.agent and c.agent ~= "" and c.agent ~= "claude") and " (only Claude uses this; this chat's agent ignores it)" or ""
+	if rest == "" then
+		AddHistory(c, "system", "effort: " .. ((c.effort and c.effort ~= "") and c.effort or "the bridge's default") .. onlyClaude .. " (/wow-ai effort low|medium|high|xhigh|max; /wow-ai effort default goes back)")
+	elseif rest == "-" or rest == "default" then
+		c.effort = ""
+		AddHistory(c, "system", "effort reset to the bridge's default")
+	else
+		c.effort = rest
+		AddHistory(c, "system", "effort set to " .. rest .. " from the next message" .. onlyClaude)
 	end
 	WoWAI.Render()
 end
@@ -1851,7 +1908,10 @@ function WoWAI.UpdateStatus()
 	else
 		agentText = "(bridge default)"
 	end
-	ui.cwd:SetText("cwd: " .. cwdText .. "   agent: " .. agentText .. "   mode: " .. mode)
+	local tuning = ""
+	if c and c.model and c.model ~= "" then tuning = tuning .. "   model: " .. c.model end
+	if c and c.effort and c.effort ~= "" then tuning = tuning .. "   effort: " .. c.effort end
+	ui.cwd:SetText("cwd: " .. cwdText .. "   agent: " .. agentText .. tuning .. "   mode: " .. mode)
 	if ui.resend then ui.resend:SetShown(c and c.pendingId ~= nil and mode == "pixel") end
 	if ui.refresh then ui.refresh:SetShown(mode ~= "pixel" or run.slotsExhausted or run.slotsMissing or run.pixelFailed or false) end
 	WoWAI.UpdateMini()
@@ -2168,10 +2228,14 @@ end
 function WoWAI.Notify(chat, text, agent, summary)
 	pcall(PlaySound, 3081)
 	WoWAI.UpdateMini()
-	-- Until a real whisper arrives, /r replies to this chat.
-	run.lastMessenger = "agent"
-	run.lastReplyChat = chat.id
+	-- Until a real whisper arrives, /r replies to this chat. Not the coach: it speaks
+	-- up on its own, so a tip must never take /r away from a player who whispered you.
+	if not chat.coach then
+		run.lastMessenger = "agent"
+		run.lastReplyChat = chat.id
+	end
 	EchoToChat(chat, text, agent, summary)
+	if chat.coach then return end
 	if ui.frame and ui.frame:IsShown() and db.activeChat == chat.id then return end
 	if UIErrorsFrame then
 		UIErrorsFrame:AddMessage(ReplyAgentName(chat, agent) .. " replied in " .. Display(chat.name), 0.5, 0.8, 1, 1)
@@ -2820,6 +2884,9 @@ local HELP = table.concat({
 	"/wow-ai delete                 delete the current chat",
 	"/wow-ai cd <folder>            folder this chat's agent works in (relative to the bridge's folder; no folder = back to default). Right-clicking the chat in the left panel and picking Folder does the same",
 	"/wow-ai agent [name]           which agent this chat talks to (no name = show; default = the bridge's). Right-clicking the chat and picking Agent does the same",
+	"/wow-ai model [name]           which model this chat uses, such as opus or sonnet (no name = show; default = the bridge's). The conversation carries on",
+	"/wow-ai effort [level]         how hard Claude thinks in this chat: low, medium, high, xhigh or max (no level = show; default = the bridge's)",
+	"/wow-ai coach [on|off|test]    Claude speaks up on quests, deaths, level-ups and gear upgrades in a chat of its own (no argument = status; cooldown <seconds> sets how often)",
 	"/wow-ai reset                  next message in this chat starts a fresh agent session",
 	"/wow-ai context [on|off]       what the agent is told about your character and where you are (no argument = show it)",
 	"/wow-ai map [...]              map layers the agent drew, the route navigator and herb/ore nodes (no argument = status and subcommands; /aimap is the same)",
@@ -2862,7 +2929,12 @@ local COMMAND_ARGS = {
 	signal = { [""] = true, on = true, off = true }, longchat = { [""] = true, on = true, off = true },
 	auto = OnOffOrNumber,
 	echo = function(rest) return rest == "" or rest == "summary" or rest == "full" or rest == "short" or rest == "off" or tonumber(rest) ~= nil end,
-	bind = 1, agent = 1,
+	bind = 1, agent = 1, model = 1,
+	effort = { [""] = true, ["-"] = true, default = true, low = true, medium = true, high = true, xhigh = true, max = true },
+	coach = function(rest) -- "/ai coach me on my rotation" still goes to the agent
+		rest = rest:lower()
+		return rest == "" or rest == "on" or rest == "off" or rest == "test" or rest:match("^cooldown%s+%d+$") ~= nil
+	end,
 	chat = ChatArgument, chats = ChatArgument,
 	cd = true, new = true, rename = true,
 	map = true, -- /wow-ai map ...: Map.lua (layers, navigator, herb/ore nodes)
@@ -2946,6 +3018,15 @@ SlashCmdList["WOWAI"] = function(msg)
 	elseif cmd == "agent" then
 		WoWAI.SetAgent(rest, c)
 		WoWAI.Toggle(true)
+	elseif cmd == "model" then
+		WoWAI.SetModel(rest, c)
+		WoWAI.Toggle(true)
+	elseif cmd == "effort" then
+		WoWAI.SetEffort(rest, c)
+		WoWAI.Toggle(true)
+	elseif cmd == "coach" then
+		-- A file new to the TOC only loads after a full client restart, not a /reload.
+		if WoWAICoach then WoWAICoach.Command(rest) else print("|cff66ccff[WoW AI]|r the coach did not load: restart the game once (a /reload is not enough)") end
 	elseif cmd == "reset" then
 		c.resetNext = true
 		local where = ChatFolder(c)

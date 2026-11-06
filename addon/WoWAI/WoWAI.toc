@@ -10,3 +10,4 @@ Codec.lua
 Inbox.lua
 WoWAI.lua
 Map.lua
+Coach.lua

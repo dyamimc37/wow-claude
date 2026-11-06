@@ -248,6 +248,7 @@ function killTree(child) {
 // while after it changes, and after every hello (a fresh or wiped client).
 if (!state.map) state.map = P.newMap();
 const MAP_DIR = path.join(HERE, 'mapjobs');
+const COACH_DIR = path.join(HERE, 'coach'); // the coach chat's empty working folder
 // Every publish rewrites all slot files, so the map rides along only for a short
 // while, and on progress publishes only while it is small.
 const MAP_SHARE_MS = 3 * 60 * 1000;
@@ -495,7 +496,12 @@ function drainQueue() {
 
 function runJob(job) {
   const key = chatKey(job);
-  const cwd = resolveCwd(job.cwd);
+  // The coach works in an empty folder of its own, whatever the chat says.
+  if (job.coach) {
+    try { fs.mkdirSync(COACH_DIR, { recursive: true }); }
+    catch (e) { finish(job, 'error', `Could not create the coach folder ${COACH_DIR}: ${e.message}`); return; }
+  }
+  const cwd = job.coach ? COACH_DIR : resolveCwd(job.cwd);
   job.cwd = cwd;
   const tag = `#${job.id}${job.session ? '@' + job.session : ''}`;
   signal('sig', job.id, false);
@@ -510,8 +516,9 @@ function runJob(job) {
       `\nUse /wow-ai cd <folder> to pick one, or /wow-ai cd alone for the default.`);
     return;
   }
-  // Which agent: the chat's own (an "agent=" flag), else the bridge's default.
-  const agentId = job.agent ? A.normalizeAgent(job.agent) : DEFAULT_AGENT;
+  // Which agent: the coach is always Claude; otherwise the chat's own (an
+  // "agent=" flag), else the bridge's default.
+  const agentId = job.coach ? 'claude' : job.agent ? A.normalizeAgent(job.agent) : DEFAULT_AGENT;
   if (!agentId) {
     log(`${tag} unknown agent "${job.agent}"`);
     finish(job, 'error', `Unknown agent "${job.agent}". This bridge knows: ${A.agentIds().join(', ')}.\n` +
@@ -520,7 +527,11 @@ function runJob(job) {
   }
   job.agent = agentId;
   const agent = A.AGENTS[agentId];
-  const acfg = A.agentConfig(cfg, agentId);
+  const base = A.agentConfig(cfg, agentId);
+  const acfg = { ...(job.coach ? A.coachConfig(base, cfg.coach) : base) };
+  // /wow-ai model and /wow-ai effort, per chat, over the config's values.
+  if (job.model) acfg.model = job.model;
+  if (job.effort) acfg.effort = job.effort;
   const cmd = A.resolveCommand(agentId, acfg);
   if (!cmd.found) {
     log(`${tag} ${agentId} not found: ${cmd.note}`);
@@ -541,7 +552,7 @@ function runJob(job) {
     log(`${tag} agent changed (${prevAgent} -> ${agentId}): new session`);
     delete state.sessions[skey]; delete state.sessions[key];
   }
-  if (Array.isArray(job.allow) && job.allow.length) {
+  if (!job.coach && Array.isArray(job.allow) && job.allow.length) {
     const added = allowRules(agentId, job.allow);
     log(`${tag} allowed for ${agentId}: ${job.allow.join(', ')}${added.length ? '' : ' (already allowed)'}`);
   }
@@ -550,8 +561,8 @@ function runJob(job) {
   const resume = state.sessions[skey] || state.sessions[key];
 
   const ctx = gameContext();
-  const system = P.systemPrompt(ctx, primer());
-  const systemShort = P.systemPrompt(ctx, '');
+  const system = job.coach ? P.coachSystemPrompt(ctx) : P.systemPrompt(ctx, primer());
+  const systemShort = job.coach ? system : P.systemPrompt(ctx, '');
   const promptFile = path.join(TMP_DIR, `prompt-${job.id}-${Date.now().toString(36)}.txt`);
   const input = agent.input({ prompt: job.text, system, systemShort, resume, cfg: acfg });
   if (input.promptFile !== undefined) {
@@ -570,7 +581,8 @@ function runJob(job) {
     env.WOW_AI_MAP_FILE = mapFileFor(job);
   } catch (e) { log(`${tag} map file unavailable: ${e.message}`); }
 
-  log(`${tag} (${job.via}) ${agent.name} starting in ${cwd}${resume ? ' (resume ' + resume.slice(0, 8) + ')' : ' (new session)'}${ctx ? ' [game context]' : ''}${running.size ? ' [' + (running.size + 1) + ' running]' : ''}`);
+  const tuning = [acfg.model, acfg.effort].filter(Boolean).join(' ');
+  log(`${tag} (${job.via}) ${agent.name}${tuning ? ' [' + tuning + ']' : ''} starting in ${cwd}${resume ? ' (resume ' + resume.slice(0, 8) + ')' : ' (new session)'}${ctx ? ' [game context]' : ''}${running.size ? ' [' + (running.size + 1) + ' running]' : ''}`);
   const child = spawn(cmd.file, args, { cwd, env, windowsHide: true, stdio: [input.stdin !== undefined ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
   running.set(key, { job, child });
   publish(key, { chat: job.chat, id: job.id, status: 'working', text: resume ? 'thinking...' : 'starting a new session...', cwd, session: resume, agent: agentId }, true);

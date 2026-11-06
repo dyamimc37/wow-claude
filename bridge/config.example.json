@@ -83,6 +83,7 @@
     }
   },
   "gameContext": true,
+  "coach": { "model": "sonnet", "effort": "low" },
   "primerFile": "docs/WOW-ADDON-PRIMER.md",
   "pollMs": 750,
   "progressWriteMs": 3000,
