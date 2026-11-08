@@ -29,6 +29,9 @@ load-on-demand slot addons. Read `docs/ARCHITECTURE.md` before touching either.
   1. Round trip working (upstream as-is).
   2. Answer questions with game context — upstream already sends character,
      zone, quest log, talents, professions; shift-clicked links carry tooltips.
+     `addon/WoWAI/Live.lua` keeps it current without a message being sent, gear
+     included, so a session outside the game can read `bridge/state.json`
+     (`context`): `wow-forever` does, with a prompt hook.
   3. Stand in for guide addons (RestedXP-style) — upstream's map layers,
      routes and navigator are the base.
   4. Watch and coach: Claude speaks up unprompted on game events (quest done,

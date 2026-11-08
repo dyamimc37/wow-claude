@@ -133,6 +133,7 @@ function parseFlags(flags) {
     else if (tok === 'h') out.hello = true;
     else if (tok === 'd') out.forget = true;
     else if (tok === 'c') out.context = true;
+    else if (tok === 'l' || tok === 'L') out.live = tok;
     else if (tok === 'coach') out.coach = true;
     else if (tok.startsWith('model=') && cleanModel(tok.slice(6))) out.model = cleanModel(tok.slice(6));
     else if (tok.startsWith('effort=') && cleanEffort(tok.slice(7))) out.effort = cleanEffort(tok.slice(7));
@@ -164,6 +165,24 @@ function jobsFromStrip(headerId, payload) {
     }
   }
   return jobs;
+}
+
+// A live update (flag "l") carries only the context lines that changed. Lines
+// are matched by label, everything before the first colon; a bare label removes
+// its line. New lines go at the end, the rest keep their place.
+function mergeContext(prev, update) {
+  const label = l => { const i = l.indexOf(':'); return i < 0 ? l : l.slice(0, i); };
+  const lines = String(prev || '').split('\n').filter(Boolean);
+  for (const raw of String(update || '').split('\n')) {
+    if (!raw.trim()) continue;
+    const key = label(raw);
+    const at = lines.findIndex(l => label(l) === key);
+    const gone = raw.slice(key.length + 1).trim() === '';
+    if (gone) { if (at >= 0) lines.splice(at, 1); }
+    else if (at >= 0) lines[at] = raw;
+    else lines.push(raw);
+  }
+  return lines.join('\n');
 }
 
 // The reload path: the addon's SavedVariables file holds an `outbox` table with
@@ -586,7 +605,7 @@ module.exports = {
   fromHex, pad3, slotNumber, chatKey, sessKey,
   alreadyHandled, markHandled, pruneStale, MONTH_MS,
   resolveCwd, sameFolder, baseName,
-  parseFlags, cleanModel, cleanEffort, jobsFromStrip, parseOutbox, systemPrompt, coachSystemPrompt, splitSummary,
+  parseFlags, cleanModel, cleanEffort, jobsFromStrip, mergeContext, parseOutbox, systemPrompt, coachSystemPrompt, splitSummary,
   ruleFor, describeToolUse,
   luaStr, luaTable, SILENT_WAV,
   MAP_LIMITS, validateMapCommand, newMap, applyMapCommands, extractMapBlocks, parseMapFile, luaMap,

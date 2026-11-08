@@ -11,3 +11,4 @@ Inbox.lua
 WoWAI.lua
 Map.lua
 Coach.lua
+Live.lua

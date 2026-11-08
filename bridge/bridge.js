@@ -395,14 +395,32 @@ function readOutbox() {
 // its hello and again whenever it changes; an empty one means "context off".
 // It is kept in state.json so a restarted bridge still has it, and goes into
 // the agent's system prompt on every run (see protocol.systemPrompt).
+const contextText = s => String(s || '').replace(/\r/g, '').trim().slice(0, 2000);
+
 function setContext(job) {
-  const text = String(job.ctx || '').replace(/\r/g, '').trim().slice(0, 2000);
+  const text = contextText(job.ctx);
   const prev = (state.context && state.context.text) || '';
   if (text === prev) return;
   state.context = text ? { text, at: Date.now(), session: job.session || '' } : null;
   saveState();
   const who = (text.split('\n').find(l => /^Character:/i.test(l)) || text.split('\n')[0] || '').slice(0, 100);
   log(`#${job.id}${job.session ? '@' + job.session : ''} game context ${text ? 'updated: ' + who : 'cleared'}`);
+}
+
+// A live update from the addon (Live.lua) only refreshes what we know about the
+// game: no agent run, no ack, no slot. "L" is a whole copy, "l" the lines that
+// changed. `at` is when the game last reported, which readers of state.json need.
+let liveSession = null;
+function applyLive(job) {
+  if (job.ctx === undefined) return;
+  const prev = (state.context && state.context.text) || '';
+  const text = contextText(job.live === 'L' ? job.ctx : P.mergeContext(prev, job.ctx));
+  state.context = text ? { text, at: Date.now(), session: job.session || '' } : null;
+  saveState();
+  if (job.session !== liveSession) {
+    liveSession = job.session;
+    log(`live game context from addon session ${job.session}`);
+  }
 }
 
 function gameContext() {
@@ -449,6 +467,7 @@ function allowRules(agentId, rules) {
 // ---------------------------------------------------------------------------
 
 function submit(job) {
+  if (job.live) { applyLive(job); return; }
   if (alreadyHandled(job)) return;
   if (job.ctx !== undefined) setContext(job);
   if (job.forget) {
@@ -776,7 +795,7 @@ function startCapture() {
     if (ev.error) { log('capture error:', ev.error); return; }
     if (typeof ev.id === 'number') {
       const jobs = jobsFromStrip(ev.id, ev.text);
-      log(`strip #${ev.id}: ${jobs.length} message(s)`);
+      if (!jobs.length || jobs.some(j => !j.live)) log(`strip #${ev.id}: ${jobs.length} message(s)`); // live updates are routine
       for (const job of jobs) submit(job);
     }
   });

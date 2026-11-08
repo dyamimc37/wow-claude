@@ -4,6 +4,11 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- Live game context: `addon/WoWAI/Live.lua` keeps the bridge's copy of the game context current while you play, without a message being sent, so tools outside the game can read it from `bridge/state.json` (`context`). An update is a record on the strip for about two seconds, usually one or two rows, with only the lines that changed; it starts no agent run and uses no slot. Nothing goes in combat or with `/wow-ai context off`.
+- The game context lists equipped gear with item levels; its cap goes from 900 to 1600 bytes.
+
 ## [0.5.0] - 2026-11-04
 
 ### Added

@@ -35,6 +35,7 @@ local STRIP_SECONDS = 40 -- max per message; it leaves the strip as soon as the 
 local POLL_SCHEDULE = { 5, 10, 16, 24, 34, 46, 60, 80, 100, 130, 160, 200, 240, 300 }
 local POLL_TAIL = 60
 local TICK_SECONDS = 2
+local LIVE_SECONDS = 2 -- a live context update stays on the strip this long (plus up to a tick)
 local CONNECT_WAIT = 15 -- seconds the Connect button waits for the bridge before giving up
 local IDLE_POLL_SECONDS = 600 -- without the sound channel, spend one slot this often while idle to check the bridge
 local RS, US = "\30", "\31" -- record / unit separators in the strip payload
@@ -390,20 +391,34 @@ local function RefreshStrip()
 	for id, rec in pairs(run.outbound) do
 		if not rec.acked then table.insert(ids, id) end
 	end
-	if #ids == 0 then
+	if #ids == 0 and not run.live then
 		HideStrip()
 		return
 	end
 	table.sort(ids)
 	-- Newest first; drop the oldest if the frame would overflow.
-	local parts, size, latest = {}, 0, ids[#ids]
+	local parts, size = {}, 0
 	for i = #ids, 1, -1 do
 		local r = RecordFor(ids[i], run.outbound[ids[i]])
 		if size + #r + 1 > Codec.MAX_PAYLOAD then break end
 		table.insert(parts, 1, r)
 		size = size + #r + 1
 	end
-	ShowStrip(latest, table.concat(parts, RS))
+	-- A live context update only goes if the player's messages left room for it.
+	if run.live then
+		local r = RecordFor(run.live.id, run.live)
+		if size + #r + 1 <= Codec.MAX_PAYLOAD then table.insert(parts, r) end
+	end
+	ShowStrip(ids[#ids] or run.live.id, table.concat(parts, RS))
+end
+
+-- One live context update (Live.lua). It stays out of run.outbound: nothing
+-- acknowledges it, and it needs no slot. The rolling id makes every update look
+-- new to the capture, which ignores a strip identical to the last one.
+function WoWAI.ShowLive(flags, ctx)
+	run.liveSeq = ((run.liveSeq or 0) % 60000) + 1
+	run.live = { id = run.liveSeq, flags = flags, ctx = ctx, chat = "", cwd = "", name = "", text = "", at = GetTime() }
+	RefreshStrip()
 end
 
 ---------------------------------------------------------------------------
@@ -828,6 +843,10 @@ local function Tick()
 	end
 	WoWAI.UpdateDot()
 	WoWAI.CheckConnection()
+	if run.live and now - run.live.at >= LIVE_SECONDS then
+		run.live = nil
+		RefreshStrip()
+	end
 	if db.settings.mode ~= "pixel" then return end
 	local changed = false
 	if run.helloPollAt and now >= run.helloPollAt then
@@ -949,7 +968,7 @@ end
 -- are meaningless markup to the agent; their tooltips are what the player sees).
 -- Every game API here is optional: whatever the client lacks is left out.
 
-local CONTEXT_MAX = 900 -- bytes of context per record; the strip has ~3.2 KB for everything
+local CONTEXT_MAX = 1600 -- bytes of context per record; the strip has ~3.2 KB for everything
 local LINK_LINES_MAX = 30 -- tooltip lines kept per link
 local LINK_BYTES_MAX = 900 -- bytes kept per link
 
@@ -973,6 +992,13 @@ end
 local PROFESSION_SKILL_IDS = {
 	[164] = true, [165] = true, [171] = true, [182] = true, [186] = true, [197] = true, [202] = true,
 	[333] = true, [393] = true, [129] = true, [185] = true, [356] = true,
+}
+
+-- Equipment slots for the Gear line: inventory slot id, label (the shirt is left out).
+local GEAR_SLOTS = {
+	{ 1, "Head" }, { 2, "Neck" }, { 3, "Shoulder" }, { 5, "Chest" }, { 6, "Waist" }, { 7, "Legs" },
+	{ 8, "Feet" }, { 9, "Wrist" }, { 10, "Hands" }, { 11, "Ring 1" }, { 12, "Ring 2" },
+	{ 13, "Trinket 1" }, { 14, "Trinket 2" }, { 15, "Back" }, { 16, "Main Hand" }, { 17, "Off Hand" }, { 18, "Ranged" },
 }
 
 -- The character's skill lines as { name, isHeader, rank, maxRank, skillID }.
@@ -1096,6 +1122,21 @@ function WoWAI.GameContext()
 		end
 	end
 	if #parts > 0 then table.insert(lines, "Professions: " .. table.concat(parts, ", ")) end
+
+	-- What is worn, with item levels where the client knows them.
+	local worn, empty = {}, {}
+	for _, slot in ipairs(GEAR_SLOTS) do
+		local link = Try(GetInventoryItemLink, "player", slot[1])
+		if type(link) == "string" then
+			local ilvl = Try(C_Item and C_Item.GetDetailedItemLevelInfo, link)
+			table.insert(worn, slot[2] .. " " .. (link:match("%[([^%]]*)%]") or "?") .. (type(ilvl) == "number" and (" (" .. ilvl .. ")") or ""))
+		else
+			table.insert(empty, slot[2])
+		end
+	end
+	if #worn > 0 then
+		table.insert(lines, "Gear: " .. table.concat(worn, ", ") .. (#empty > 0 and ("; Empty: " .. table.concat(empty, ", ")) or ""))
+	end
 
 	-- Quest log ids (what is accepted, and which are done), so route planning can
 	-- skip pickups and turn-ins that no longer apply.
