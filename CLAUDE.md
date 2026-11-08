@@ -15,6 +15,11 @@ load-on-demand slot addons. Read `docs/ARCHITECTURE.md` before touching either.
   - PC: client `F:\World of Warcraft\_forever_` (the WD_BLACK SN7100, his
     fastest drive; keep it there), checkout
     `C:\Users\User\Documents\Claude\Github\wow-claude`, capture `capture.ps1`.
+    The bridge starts hidden at logon (2026-11-08): value `WoWAIBridge` under
+    `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, through
+    `conhost --headless` so no window shows, in `bridge/` so chats keep
+    `defaultCwd`. Nothing stops a second bridge, so don't start one by hand
+    while it runs.
   - Mac: client `/Applications/World of Warcraft/_forever_`, checkout
     `~/Documents/Projects/Github/Personal/wow-claude`, capture
     `capture_mac.py`; its terminal needs Screen Recording and Automation
