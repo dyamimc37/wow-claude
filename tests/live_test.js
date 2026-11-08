@@ -257,3 +257,17 @@ test('mergeContext replaces by label, appends new lines and drops bare labels', 
   assert.equal(P.mergeContext(prev, 'Missing:'), prev);
   assert.equal(P.mergeContext('', 'Location: Elwynn\n\nGame: x'), 'Location: Elwynn\nGame: x');
 });
+
+test('an error in the main tick is caught, and diag says what is holding updates', () => {
+  const vm = newVM();
+  login(vm);
+  vm.run('local real = WoWAI.UpdateDot; WoWAI.UpdateDot = function() error("boom") end; STUB.Tick(); WoWAI.UpdateDot = real');
+  vm.run('SlashCmdList.WOWAI("diag")');
+  const last = 'WoWAIDB.chats[1].history[#WoWAIDB.chats[1].history].text';
+  let text = vm.evaluate(last);
+  assert.match(text, /main tick errors: 1, last: .*boom/);
+  assert.match(text, /live updates: last sent \d+ s ago, blocked by: nothing, error: none/);
+  vm.run('STUB.onLoadAddOn = nil; STUB.now = STUB.now + 3600; STUB.Tick(); SlashCmdList.WOWAI("diag")');
+  text = vm.evaluate(last);
+  assert.match(text, /blocked by: bridge not connected/);
+});

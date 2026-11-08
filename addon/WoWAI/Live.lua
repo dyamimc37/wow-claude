@@ -55,8 +55,17 @@ local function ByLabel(ctx)
 	return out
 end
 
+-- One line for /wow-ai diag: when an update last went, and what is holding the next.
+function M.Diag()
+	local age = M.sentAt and (math.floor(GetTime() - M.sentAt) .. " s ago") or "never"
+	return "live updates: last sent " .. age
+		.. ", blocked by: " .. (M.blocked or "nothing")
+		.. ", error: " .. (M.lastError or "none")
+end
+
 local function SendWhole(ctx, lines, now)
 	WoWAI.ShowLive("h;L", ctx)
+	M.sentAt = now
 	sent, firstDiffAt = lines, nil
 	lastChangeAt, lastVolatileAt = now, now
 end
@@ -90,6 +99,7 @@ local function SendChanges(lines, now)
 	end
 	table.sort(out)
 	WoWAI.ShowLive("h;l", table.concat(out, "\n"))
+	M.sentAt = now
 	lastChangeAt = now
 	if volatile then lastVolatileAt = now end
 	firstDiffAt = firstDiffAt or now
@@ -98,14 +108,22 @@ end
 local function Tick()
 	local s = WoWAIDB and WoWAIDB.settings
 	if not (s and s.context and s.mode == "pixel" and WoWAI.IsConnected()) then
+		M.blocked = (s and s.context and s.mode == "pixel") and "bridge not connected" or "context off or not pixel mode"
 		-- Whatever happens from here on the bridge won't see; start over with a whole copy.
 		sent, firstDiffAt = {}, nil
 		return
 	end
-	if Try(UnitAffectingCombat, "player") or Try(InCombatLockdown) then return end
+	if Try(UnitAffectingCombat, "player") or Try(InCombatLockdown) then
+		M.blocked = "combat"
+		return
+	end
 	local now = GetTime()
 	local ctx = WoWAI.GameContext()
-	if ctx == "" then return end
+	if ctx == "" then
+		M.blocked = "empty context"
+		return
+	end
+	M.blocked = nil
 	local lines = ByLabel(ctx)
 	if not next(sent) or (firstDiffAt and now - firstDiffAt >= FULL_SECONDS) then
 		SendWhole(ctx, lines, now)

@@ -922,6 +922,16 @@ local function Tick()
 	end
 end
 
+-- Presence, the strip and the connection light all live in Tick, so one error
+-- must not cost the rest of the session. /wow-ai diag shows what was caught.
+local function GuardedTick()
+	local ok, err = pcall(Tick)
+	if not ok then
+		run.tickErrors = (run.tickErrors or 0) + 1
+		run.tickError = tostring(err)
+	end
+end
+
 -- Pull whatever bridge.js last wrote into Inbox.lua (the reload path).
 local function ProcessInbox()
 	local inbox = WoWAI_Inbox
@@ -3173,6 +3183,8 @@ SlashCmdList["WOWAI"] = function(msg)
 			"presence: head at " .. tostring(run.presence and run.presence.last or "?") .. ", beats seen: " .. tostring(run.presence and run.presence.beats or 0),
 			select(5, WoWAI.BridgeState()),
 			"mode: " .. s.mode .. ", session token: " .. tostring(db.session),
+			"main tick errors: " .. tostring(run.tickErrors or 0) .. (run.tickError and (", last: " .. run.tickError) or ""),
+			WoWAILive.Diag(),
 		}
 		for _, ch in ipairs(db.chats) do
 			local a = run.act and run.act[ch.id]
@@ -3259,7 +3271,7 @@ ev:SetScript("OnEvent", function(self, event, arg1)
 		WoWAI.UpdateDot()
 		if db.settings.longchat then ApplyLongChat() end
 		HookReplyCommand()
-		C_Timer.NewTicker(TICK_SECONDS, Tick)
+		C_Timer.NewTicker(TICK_SECONDS, GuardedTick)
 		C_Timer.After(3, WoWAI.SayHello)
 	elseif event == "UPDATE_MACROS" then
 		-- "Create" / "Update" on the macro buttons follows what exists now.
